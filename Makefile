@@ -19,7 +19,7 @@ help:
 	@echo "  make validate           lint + test (+ systemd-analyze if available)"
 
 install-deps:
-	./scripts/install-debian-packages.sh
+	bash ./scripts/install-debian-packages.sh
 
 install:
 	bash ./scripts/install-systemd-user.sh
