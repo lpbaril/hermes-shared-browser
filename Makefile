@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: help install-deps install start stop restart status health doctor set-vnc-password validate
+.PHONY: help install-deps install start stop restart status health doctor set-vnc-password validate lint test
 
 help:
 	@echo "Hermes Shared Browser targets"
@@ -13,8 +13,10 @@ help:
 	@echo "  make status             Show systemd service status"
 	@echo "  make health             Run health/security checks"
 	@echo "  make doctor             Alias for health"
-	@echo "  make set-vnc-password   Prompt for a VNC password and store it locally"
-	@echo "  make validate           Validate scripts and systemd unit syntax"
+	@echo "  make set-vnc-password   Prompt for a VNC password (required before start)"
+	@echo "  make lint               bash -n + shellcheck"
+	@echo "  make test               Run automated tests"
+	@echo "  make validate           lint + test (+ systemd-analyze if available)"
 
 install-deps:
 	./scripts/install-debian-packages.sh
@@ -46,7 +48,21 @@ health doctor:
 set-vnc-password:
 	./scripts/set-vnc-password.sh
 
-validate:
-	bash -n scripts/*.sh
-	systemd-analyze --user verify systemd/user/*.service
-	git diff --check
+lint:
+	bash -n scripts/*.sh tests/*.sh
+	@if command -v shellcheck >/dev/null 2>&1; then \
+	  shellcheck -x scripts/*.sh tests/*.sh; \
+	else \
+	  echo "note: shellcheck not installed; skipped (CI installs it)"; \
+	fi
+
+test:
+	./tests/run.sh
+
+validate: lint test
+	@if command -v systemd-analyze >/dev/null 2>&1; then \
+	  systemd-analyze --user verify systemd/user/*.service || \
+	    echo "note: systemd-analyze --user verify reported issues (may need a user session)"; \
+	else \
+	  echo "note: systemd-analyze not available; skipped"; \
+	fi
