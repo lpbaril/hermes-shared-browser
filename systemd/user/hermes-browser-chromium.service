@@ -1,13 +1,30 @@
 [Unit]
 Description=Hermes Shared Browser - Chromium with local CDP
+Documentation=file:README.md
 After=hermes-browser-xvfb.service
 Requires=hermes-browser-xvfb.service
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/hermes-shared-browser/env
-Environment=DISPLAY=:${DISPLAY_NUM}
-ExecStartPre=/usr/bin/mkdir -p ${CHROME_PROFILE_DIR}
+EnvironmentFile=%E/hermes-shared-browser/env
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp
+ReadWritePaths=%h/.hermes/browser-profiles
+ReadWritePaths=%E/hermes-shared-browser
+ReadWritePaths=%t/hermes-shared-browser
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=4G
+TasksMax=512
+# PrivateTmp omitted so Chromium can use /tmp/.X11-unix created by Xvfb.
+# /proc is available by default. /dev/shm avoided via --disable-dev-shm-usage.
+KillMode=mixed
+TimeoutStopSec=30
+ExecStartPre=%E/hermes-shared-browser/bin/assert-loopback.sh CDP_HOST ${CDP_HOST}
+ExecStartPre=/usr/bin/mkdir -p -m 0700 ${CHROME_PROFILE_DIR}
 ExecStart=/usr/bin/env ${CHROME_BIN} \
   --user-data-dir=${CHROME_PROFILE_DIR} \
   --remote-debugging-address=${CDP_HOST} \
@@ -17,7 +34,9 @@ ExecStart=/usr/bin/env ${CHROME_BIN} \
   --disable-gpu \
   --disable-dev-shm-usage \
   --password-store=basic \
+  --disable-save-password-bubble \
   about:blank
+ExecStop=/usr/bin/kill -s TERM $MAINPID
 Restart=on-failure
 RestartSec=3
 
