@@ -22,7 +22,7 @@ install-deps:
 	./scripts/install-debian-packages.sh
 
 install:
-	./scripts/install-systemd-user.sh
+	bash ./scripts/install-systemd-user.sh
 
 start:
 	systemctl --user enable --now hermes-browser-xvfb.service
@@ -43,21 +43,21 @@ status:
 	systemctl --user --no-pager --lines=30 status hermes-browser-xvfb.service hermes-browser-chromium.service hermes-browser-vnc.service hermes-browser-novnc.service
 
 health doctor:
-	./scripts/check-health.sh
+	bash ./scripts/check-health.sh
 
 set-vnc-password:
-	./scripts/set-vnc-password.sh
+	bash ./scripts/set-vnc-password.sh
 
 lint:
 	bash -n scripts/*.sh tests/*.sh
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	  shellcheck -x scripts/*.sh tests/*.sh; \
+	  shellcheck -x -e SC1091 scripts/*.sh tests/*.sh; \
 	else \
 	  echo "note: shellcheck not installed; skipped (CI installs it)"; \
 	fi
 
 test:
-	./tests/run.sh
+	bash ./tests/run.sh
 
 validate: lint test
 	@if command -v systemd-analyze >/dev/null 2>&1; then \
