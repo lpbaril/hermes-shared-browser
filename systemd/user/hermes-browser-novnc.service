@@ -1,11 +1,25 @@
 [Unit]
 Description=Hermes Shared Browser - noVNC web bridge
+Documentation=file:README.md
 After=hermes-browser-vnc.service
 Requires=hermes-browser-vnc.service
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/hermes-shared-browser/env
+EnvironmentFile=%E/hermes-shared-browser/env
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%E/hermes-shared-browser
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=256M
+TasksMax=64
+ExecStartPre=%E/hermes-shared-browser/bin/assert-loopback.sh NOVNC_HOST ${NOVNC_HOST}
+ExecStartPre=%E/hermes-shared-browser/bin/assert-loopback.sh VNC_HOST ${VNC_HOST}
+ExecStartPre=/usr/bin/test -n "${VNC_PASSWORD_FILE}" -a -f "${VNC_PASSWORD_FILE}"
 ExecStart=/usr/bin/websockify --web ${NOVNC_WEB_DIR} ${NOVNC_HOST}:${NOVNC_PORT} ${VNC_HOST}:${VNC_PORT}
 Restart=on-failure
 RestartSec=2

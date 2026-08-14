@@ -1,11 +1,24 @@
 [Unit]
 Description=Hermes Shared Browser - Xvfb display
-After=network.target
+Documentation=file:README.md
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/hermes-shared-browser/env
-ExecStart=/usr/bin/Xvfb :${DISPLAY_NUM} -screen 0 ${SCREEN_GEOMETRY} -ac -nolisten tcp
+EnvironmentFile=%E/hermes-shared-browser/env
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp
+ReadWritePaths=%t/hermes-shared-browser
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=512M
+TasksMax=64
+# PrivateTmp is omitted: the display server must create /tmp/.X11-unix/Xn for Chromium and the VNC bridge.
+ExecStartPre=%E/hermes-shared-browser/bin/prepare-xauth.sh
+ExecStart=/usr/bin/Xvfb ${DISPLAY} -auth ${XAUTHORITY} -screen 0 ${SCREEN_GEOMETRY} -nolisten tcp
+ExecStartPost=%E/hermes-shared-browser/bin/wait-for-x.sh
 Restart=on-failure
 RestartSec=2
 

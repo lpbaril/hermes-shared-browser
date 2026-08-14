@@ -1,12 +1,27 @@
 [Unit]
 Description=Hermes Shared Browser - x11vnc bridge
+Documentation=file:README.md
 After=hermes-browser-xvfb.service
 Requires=hermes-browser-xvfb.service
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/hermes-shared-browser/env
-ExecStart=/usr/bin/bash -lc 'args=(-display ":${DISPLAY_NUM}" -listen "${VNC_HOST}" -rfbport "${VNC_PORT}" -forever -shared); if [[ -n "${VNC_PASSWORD_FILE:-}" && -f "${VNC_PASSWORD_FILE}" ]]; then args+=(-rfbauth "${VNC_PASSWORD_FILE}"); else args+=(-nopw); fi; exec /usr/bin/x11vnc "${args[@]}"'
+EnvironmentFile=%E/hermes-shared-browser/env
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp
+ReadWritePaths=%E/hermes-shared-browser
+ReadWritePaths=%t/hermes-shared-browser
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryMax=256M
+TasksMax=64
+# PrivateTmp omitted so the VNC bridge can use /tmp/.X11-unix created by Xvfb.
+ExecStartPre=%E/hermes-shared-browser/bin/assert-loopback.sh VNC_HOST ${VNC_HOST}
+ExecStart=%E/hermes-shared-browser/bin/start-x11vnc.sh
+ExecStartPost=%E/hermes-shared-browser/bin/wait-for-port.sh ${VNC_HOST} ${VNC_PORT}
 Restart=on-failure
 RestartSec=2
 

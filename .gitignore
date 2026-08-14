@@ -11,3 +11,14 @@ cookies*
 .DS_Store
 .idea/
 .vscode/
+
+# Local runtime / secrets (never commit)
+*.pass
+vnc.pass
+Xauthority
+Xauthority-*
+auth.json
+screenshots/
+downloads/
+browser-profiles/
+PUSH_MANIFEST.txt
