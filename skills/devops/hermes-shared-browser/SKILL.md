@@ -1,7 +1,7 @@
 ---
 name: hermes-shared-browser
-description: Use when configuring a persistent visible Chromium session for Hermes Agent on a headless Linux server, VPS, homelab box, or SSH-only machine. Guides safe Xvfb, VNC/noVNC, local-only CDP, Tailscale/private-LAN access, Hermes browser.cdp_url configuration, health checks, and troubleshooting.
-version: 1.0.0
+description: Use when configuring a persistent visible Chromium session for Hermes Agent on a headless Linux server. Guides Xvfb with Xauthority, loopback-only CDP/VNC/noVNC, Tailscale Serve, browser.cdp_url / BU_CDP_URL, procedural handoff, and Debian LXD guest deploy. Never --no-sandbox.
+version: 1.1.0
 author: Hermes Agent
 license: MIT
 platforms: [linux]
@@ -15,7 +15,7 @@ metadata:
 
 ## Overview
 
-Use this skill to configure a reusable, persistent, visible browser runtime for Hermes Agent on a headless Linux host. Hermes already provides the browser automation engine through browser tools, `/browser connect`, and `browser.cdp_url`; this stack is an operational wrapper that makes a safe, persistent, visible Chromium session available on Debian/Ubuntu-style servers.
+Use this skill to configure a reusable, persistent, visible browser runtime for Hermes Agent on a headless Linux host. Hermes already provides the browser automation engine through browser tools, `/browser connect`, and `browser.cdp_url`; this stack is an operational wrapper (externally owned systemd user runtime) that makes a persistent visible Chromium session available. Prefer a Debian LXD guest; Ubuntu snap Chromium is not supported and --no-sandbox is never used.
 
 ```text
 Hermes Agent -> local Chrome DevTools Protocol -> Chromium profile
@@ -24,13 +24,15 @@ Human user   -> VNC/noVNC pixels + keyboard     -> same Chromium profile
 
 This lets a person log in once through a visual browser, handle MFA, solve account-specific prompts, or inspect the UI, then let Hermes continue using the same authenticated browser profile through CDP.
 
-The open-source reference implementation is:
+The open-source reference implementation (this hardened MIT fork) is:
 
 ```text
-https://github.com/Marouan-chak/hermes-shared-browser
+https://github.com/lpbaril/hermes-shared-browser
 ```
 
-Security boundary: CDP is powerful enough to control authenticated accounts and read browser state. Keep CDP bound to loopback (`127.0.0.1`) only. Expose only the VNC/noVNC human-control surface, and only on a trusted private path such as Tailscale, WireGuard, SSH tunnel, or private LAN.
+Upstream (unmodified): https://github.com/Marouan-chak/hermes-shared-browser
+
+Security boundary: CDP is powerful enough to control authenticated accounts and read browser state. Keep CDP, raw VNC, and noVNC bound to loopback (`127.0.0.1`) only. Remote pixels go through Tailscale Serve HTTPS or an SSH tunnel to `127.0.0.1:6080`. noVNC is interactive account access. VNC/noVNC refuse to start without a password file.
 
 ## When to Use
 
@@ -39,7 +41,7 @@ Use this skill when the user asks to:
 - make Hermes browser automation reuse a browser they can see and log into manually
 - run Hermes browser automation on a headless server, VPS, Raspberry Pi, or homelab machine
 - connect Hermes Agent to an existing visible Chromium/Chrome session through CDP
-- expose browser pixels over Tailscale/private LAN without exposing CDP
+- expose browser pixels over Tailscale Serve or SSH tunnel without exposing CDP
 - troubleshoot `browser.cdp_url`, CDP connection failures, blank VNC screens, or service startup failures
 - package or document a shared browser stack for other Hermes users
 
@@ -78,7 +80,7 @@ Default safe bindings:
 | --- | --- | --- |
 | CDP | `127.0.0.1:9222` | Keep loopback-only. Do not expose to LAN/VPN/public internet. |
 | VNC | `127.0.0.1:5900` | Keep loopback-only unless separately authenticated and encrypted. |
-| noVNC | `127.0.0.1:6080` or private IP | Expose only via private LAN/VPN/Tailnet or behind authentication. |
+| noVNC | `127.0.0.1:6080` | Loopback only. Remote access via Tailscale Serve or SSH `-L 6080:127.0.0.1:6080`. |
 | Browser profile | `~/.hermes/browser-profiles/shared` | Persistent local state; never commit or copy into logs. |
 
 ## Installation Workflow
@@ -86,31 +88,27 @@ Default safe bindings:
 Start from the reference repository:
 
 ```bash
-git clone https://github.com/Marouan-chak/hermes-shared-browser.git
+git clone https://github.com/lpbaril/hermes-shared-browser.git
 cd hermes-shared-browser
 ```
 
-Install OS packages. This repo is intentionally Debian/Ubuntu focused for now. Use the Makefile target:
+Prefer a Debian LXD guest with distro Chromium (see `docs/lxd-guest.md`). Ubuntu snap Chromium is not supported.
 
 ```bash
 make install-deps
+make install
+make set-vnc-password
+make start
+make health
 ```
 
-Equivalent manual package set:
+The installer prints `loginctl enable-linger "$USER"` and does not run it. Linger is required for user systemd after logout/reboot.
+
+Equivalent Debian package set:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y chromium xvfb x11vnc novnc websockify curl jq
-```
-
-Some Ubuntu releases use `chromium-browser`; the installer tries `chromium` first and falls back where possible.
-
-Install the user services:
-
-```bash
-make install
-make start
-make health
+sudo apt-get install -y chromium xvfb x11vnc novnc websockify curl jq xauth openssl
 ```
 
 ## Configure Hermes Agent
@@ -119,6 +117,8 @@ Point Hermes to the local CDP endpoint:
 
 ```bash
 hermes config set browser.cdp_url http://127.0.0.1:9222
+# or: export BU_CDP_URL=http://127.0.0.1:9222
+# BU_CDP_WS is the websocket from http://127.0.0.1:9222/json/version (loopback only)
 ```
 
 Then restart or relaunch any long-running Hermes session that needs to pick up the updated config.
@@ -138,54 +138,28 @@ Expected shape:
 
 ## Configure Remote Human Access
 
-For a remote human to see the browser, expose noVNC on a private address only.
-
-Edit the generated environment file:
+Keep noVNC on loopback. For a remote human, use Tailscale Serve or SSH:
 
 ```bash
-$EDITOR ~/.config/hermes-shared-browser/env
+tailscale serve --bg http://127.0.0.1:6080
+# or: ssh -N -L 6080:127.0.0.1:6080 user@server
 ```
 
-Example for a private VPN/Tailscale interface:
-
-```bash
-NOVNC_HOST=<private-or-tailnet-ip>
-NOVNC_PORT=6080
-```
-
-Keep these values unchanged unless there is a specific reason:
+Do not set `NOVNC_HOST` to a tailnet or LAN address; units refuse non-loopback binds.
 
 ```bash
 CDP_HOST=127.0.0.1
 VNC_HOST=127.0.0.1
+NOVNC_HOST=127.0.0.1
 ```
 
-Restart noVNC after changing `NOVNC_HOST` or `NOVNC_PORT`:
-
-```bash
-systemctl --user restart hermes-browser-novnc.service
-```
-
-Open the browser UI from a machine that can reach the private interface:
-
-```text
-http://<private-or-tailnet-ip>:6080/vnc.html
-```
-
-When noVNC is exposed beyond loopback, set a VNC password:
+VNC password is required (fail-closed, no `-nopw`):
 
 ```bash
 make set-vnc-password
-systemctl --user restart hermes-browser-vnc.service hermes-browser-novnc.service
 ```
 
-Recommended workflow:
-
-1. Open noVNC.
-2. Log into the target website manually.
-3. Complete MFA or account prompts.
-4. Ask Hermes to continue in that same browser session.
-5. Keep noVNC reachable only while needed if the environment is not fully trusted.
+Handoff is procedural (no lease service): pause Hermes → human takes control in noVNC → hand back → Hermes takes a fresh browser snapshot. See `docs/handoff.md`.
 
 ## Verification Checklist
 
@@ -205,8 +179,8 @@ Expected:
 - Xvfb service is active
 - Chromium service is active and not repeatedly restarting
 - CDP listens on `127.0.0.1:<port>` only
-- VNC listens on `127.0.0.1:<port>` unless intentionally and safely changed
-- noVNC listens on the intended private interface/port
+- VNC listens on `127.0.0.1:<port>` only
+- noVNC listens on 127.0.0.1 only
 - Hermes has `browser.cdp_url` set to the local CDP endpoint
 - A human can open noVNC and see Chromium
 - Hermes browser automation can navigate using the same profile after the human login
@@ -301,19 +275,15 @@ ss -ltnp | grep ':6080'
 curl -fsSI http://127.0.0.1:6080/ | head
 ```
 
-From another machine on the same private network, test:
+Remote access should hit Tailscale Serve or `http://127.0.0.1:6080/` through an SSH tunnel, not a LAN bind.
 
-```bash
-curl -fsSI http://<private-or-tailnet-ip>:6080/ | head
-```
-
-If local works but remote fails, the issue is usually the bind address, host firewall, VPN ACLs, or route/DNS rather than Chromium.
+If local loopback works but Serve/tunnel fails, the issue is Serve/ACL/SSH, not Chromium.
 
 ## Open-Source Contribution Best Practices
 
 When modifying the reference repo or producing reusable instructions:
 
-- Use placeholders like `<private-or-tailnet-ip>` instead of real private hostnames, real IPs, customer names, account IDs, tokens, or local-only paths.
+- Use `127.0.0.1` examples only. Do not put real hostnames, Tailscale IPs, tailnet DNS, account IDs, tokens, or customer info in files.
 - Do not commit `~/.config/hermes-shared-browser/env`, browser profiles, cookies, screenshots, VNC passwords, logs, `.env` files, or generated state.
 - Keep CDP examples loopback-only.
 - Include verification commands and expected safe/unsafe outputs.
